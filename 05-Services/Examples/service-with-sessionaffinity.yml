@@ -1,0 +1,66 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: sticky-session-service
+  namespace: default
+  labels:
+    app: web
+spec:
+  type: LoadBalancer
+  
+  selector:
+    app: webapp
+  
+  ports:
+  - name: http
+    protocol: TCP
+    port: 80
+    targetPort: 8080
+  
+  # Session Affinity: Route same client to same pod
+  # Client identified by source IP
+  sessionAffinity: ClientIP
+  
+  # Session affinity timeout (how long to remember client)
+  sessionAffinityConfig:
+    clientIP:
+      # Timeout in seconds (default: 10800 = 3 hours)
+      timeoutSeconds: 3600  # 1 hour
+
+---
+# Service without session affinity (load balanced equally)
+apiVersion: v1
+kind: Service
+metadata:
+  name: load-balanced-service
+  namespace: default
+spec:
+  type: LoadBalancer
+  
+  selector:
+    app: api
+  
+  ports:
+  - name: http
+    protocol: TCP
+    port: 80
+    targetPort: 8080
+  
+  # No session affinity - true load balancing
+  sessionAffinity: None  # Default
+
+---
+# Note: Session affinity considerations
+# 
+# Pros:
+# - Stateful session persistence without server-side session store
+# - Useful for applications with client-side session data
+# - Session data can be stored in client cookies
+# 
+# Cons:
+# - Unequal load distribution if sticky sessions used heavily
+# - Pod eviction may break session (timeout required)
+# - Not ideal for distributed/microservice architecture
+# - Consider distributed session store (Redis, Memcached) instead
+#
+# Best Practice: Use distributed session store + load balancing

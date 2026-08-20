@@ -1,0 +1,61 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: database-backup
+  namespace: default
+spec:
+  # Total number of pods to run
+  completions: 1
+  # Number of pods to run in parallel
+  parallelism: 1
+  # Time limit for job to complete (in seconds)
+  activeDeadlineSeconds: 3600
+  # Number of retries before marking job as failed
+  backoffLimit: 3
+  # Keep completed job around for 7 days
+  ttlSecondsAfterFinished: 604800
+  
+  template:
+    metadata:
+      labels:
+        app: backup
+    spec:
+      # Pod must not restart
+      restartPolicy: Never
+      
+      containers:
+      - name: backup
+        image: postgres:14
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "Starting database backup..."
+          pg_dump -h postgres.default.svc.cluster.local \
+            -U backup_user \
+            -d production_db > /backup/db_$(date +%s).sql
+          echo "Backup completed successfully"
+        
+        env:
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials
+              key: backup-password
+        
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "512Mi"
+          limits:
+            cpu: "1"
+            memory: "1Gi"
+        
+        volumeMounts:
+        - name: backup-volume
+          mountPath: /backup
+      
+      volumes:
+      - name: backup-volume
+        persistentVolumeClaim:
+          claimName: backup-pvc

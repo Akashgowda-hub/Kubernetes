@@ -1,0 +1,66 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-headless
+  namespace: default
+  labels:
+    app: mysql
+spec:
+  # Headless: No ClusterIP assigned, returns all pod IPs
+  type: ClusterIP
+  clusterIP: None  # Key: set to None for headless
+  
+  # Service name must match the service name in StatefulSet serviceName
+  # Enables DNS queries like: pod-0.mysql-headless.default.svc.cluster.local
+  
+  # Label selector for backend pods
+  selector:
+    app: mysql
+  
+  # Ports configuration
+  ports:
+  - name: mysql
+    protocol: TCP
+    port: 3306
+    targetPort: 3306
+  
+  # Session affinity (not used with headless but supported)
+  sessionAffinity: None
+  
+  # DNS publishing policy
+  # - ClusterFirstWithHostNet: Default
+  # - ClusterFirst
+  dnsPolicy: ClusterFirst
+
+---
+# StatefulSet using Headless Service
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql-statefulset
+  namespace: default
+spec:
+  # Must reference the headless service
+  serviceName: mysql-headless
+  
+  replicas: 3
+  selector:
+    matchLabels:
+      app: mysql
+  
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+      - name: mysql
+        image: mysql:8.0
+        ports:
+        - containerPort: 3306
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-root-password
+              key: password

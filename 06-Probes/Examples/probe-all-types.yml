@@ -1,0 +1,178 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: comprehensive-health-checks
+  namespace: default
+  labels:
+    app: multi-probe-app
+spec:
+  # Termination grace period allows preStop to run
+  terminationGracePeriodSeconds: 30
+  
+  containers:
+  - name: app
+    image: webapp:latest
+    ports:
+    - name: http
+      containerPort: 8080
+    - name: metrics
+      containerPort: 9090
+    
+    resources:
+      requests:
+        cpu: "250m"
+        memory: "256Mi"
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+    
+    env:
+    - name: APP_ENV
+      value: "production"
+    - name: ENABLE_HEALTH_CHECKS
+      value: "true"
+    
+    # ┌─────────────────────────────────────────────────────┐
+    # │ STARTUP PROBE - Application initialization check    │
+    # │ Purpose: Wait until app is fully ready              │
+    # │ Impact: Disables readiness/liveness until success   │
+    # └─────────────────────────────────────────────────────┘
+    startupProbe:
+      # HTTP check for startup endpoint
+      httpGet:
+        path: /api/startup
+        port: http
+        scheme: HTTP
+      # Check every 5 seconds
+      periodSeconds: 5
+      # Fail after 30 consecutive failures (150 seconds total)
+      failureThreshold: 30
+      # Wait max 2 seconds for response
+      timeoutSeconds: 2
+      # Don't delay first probe
+      initialDelaySeconds: 0
+    
+    # ┌─────────────────────────────────────────────────────┐
+    # │ READINESS PROBE - Traffic routing decision           │
+    # │ Purpose: Determine if pod should receive traffic    │
+    # │ Impact: Removed from service endpoints if fails      │
+    # └─────────────────────────────────────────────────────┘
+    readinessProbe:
+      httpGet:
+        path: /api/health/ready
+        port: http
+        scheme: HTTP
+        httpHeaders:
+        - name: X-Health-Check
+          value: "readiness"
+      # Check every 5 seconds
+      periodSeconds: 5
+      # Wait max 2 seconds for response
+      timeoutSeconds: 2
+      # Mark unhealthy after 2 consecutive failures
+      failureThreshold: 2
+      # Require 1 successful probe to mark ready
+      successThreshold: 1
+      # Wait 5 seconds before first probe
+      initialDelaySeconds: 5
+    
+    # ┌─────────────────────────────────────────────────────┐
+    # │ LIVENESS PROBE - Container restart decision          │
+    # │ Purpose: Detect if app is deadlocked/frozen         │
+    # │ Impact: Restarts container if probe fails           │
+    # └─────────────────────────────────────────────────────┘
+    livenessProbe:
+      httpGet:
+        path: /api/health/live
+        port: http
+        scheme: HTTP
+      # Check every 10 seconds
+      periodSeconds: 10
+      # Wait max 2 seconds for response
+      timeoutSeconds: 2
+      # Restart after 3 consecutive failures
+      failureThreshold: 3
+      # Wait 15 seconds before first probe
+      initialDelaySeconds: 15
+    
+    # ┌─────────────────────────────────────────────────────┐
+    # │ LIFECYCLE HOOK - Graceful shutdown                  │
+    # │ Purpose: Prepare application for termination       │
+    # │ Impact: Runs before SIGTERM signal                  │
+    # └─────────────────────────────────────────────────────┘
+    lifecycle:
+      preStop:
+        exec:
+          command:
+          - /bin/sh
+          - -c
+          - |
+            echo "Graceful shutdown initiated..."
+            # Signal app to stop accepting new connections
+            curl -X POST http://localhost:8080/api/shutdown \
+              -H "Content-Type: application/json" || true
+            # Wait for existing connections to close
+            sleep 10
+            echo "Shutdown complete"
+
+---
+# Probe Configuration Comparison Chart
+# 
+# Metric                     Startup    Readiness   Liveness
+# ────────────────────────────────────────────────────────────
+# Runs When                  Init       Running     Running
+# Purpose                    Init done  Ready       Alive
+# Failure Action             None       Remove      Restart
+# Typical Interval           5-10s      5s          10s
+# Typical Threshold          30         2-3         3
+# Typical Timeout            1-2s       2s          2s
+# Initial Delay              0s         5-10s       15-30s
+# Use Case                   Slow app   Load bal    Deadlock
+# ────────────────────────────────────────────────────────────
+
+---
+# Production Best Practices Example
+apiVersion: v1
+kind: Pod
+metadata:
+  name: production-health-probes
+spec:
+  terminationGracePeriodSeconds: 30
+  
+  containers:
+  - name: api-server
+    image: api-service:2.0
+    ports:
+    - containerPort: 8080
+    
+    # For slow-starting applications
+    startupProbe:
+      httpGet:
+        path: /status
+        port: 8080
+      failureThreshold: 30
+      periodSeconds: 10  # Check every 10 sec
+    
+    # For responsive applications - strict
+    readinessProbe:
+      httpGet:
+        path: /ready
+        port: 8080
+      periodSeconds: 3    # Check frequently
+      failureThreshold: 2  # Fail fast
+      timeoutSeconds: 1
+    
+    # For critical services - strict
+    livenessProbe:
+      httpGet:
+        path: /live
+        port: 8080
+      periodSeconds: 5    # Check every 5 sec
+      failureThreshold: 3  # 3 strikes policy
+      timeoutSeconds: 2
+      initialDelaySeconds: 30
+    
+    lifecycle:
+      preStop:
+        exec:
+          command: ["/app/graceful-shutdown.sh"]

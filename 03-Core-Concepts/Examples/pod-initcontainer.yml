@@ -1,0 +1,169 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-initcontainer
+  namespace: default
+spec:
+  # Init containers run before main containers
+  # Must complete successfully (exit code 0)
+  # Run sequentially (one at a time)
+  
+  initContainers:
+  # Init 1: Download configuration
+  - name: download-config
+    image: curl:latest
+    command:
+    - /bin/sh
+    - -c
+    - |
+      echo "Downloading configuration..."
+      curl -o /config/app-config.yaml http://config-server:8080/config
+      echo "Configuration downloaded"
+    volumeMounts:
+    - name: config
+      mountPath: /config
+
+  # Init 2: Database migration
+  - name: db-migrate
+    image: db-migration:latest
+    command:
+    - /bin/sh
+    - -c
+    - |
+      echo "Running database migrations..."
+      /app/migrate.sh --target-db postgres://db-server:5432/mydb
+      echo "Migrations completed"
+    env:
+    - name: DB_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: db-credentials
+          key: password
+
+  # Init 3: Wait for dependencies
+  - name: wait-for-services
+    image: busybox:1.28
+    command:
+    - /bin/sh
+    - -c
+    - |
+      echo "Waiting for dependencies..."
+      until nc -z postgres 5432; do
+        echo "Waiting for postgres..."
+        sleep 2
+      done
+      until nc -z redis 6379; do
+        echo "Waiting for redis..."
+        sleep 2
+      done
+      echo "All dependencies ready"
+
+  # Main application containers (run after all inits succeed)
+  containers:
+  - name: app
+    image: myapp:latest
+    ports:
+    - containerPort: 8080
+    volumeMounts:
+    - name: config
+      mountPath: /etc/config
+
+  # Volumes
+  volumes:
+  - name: config
+    emptyDir: {}
+
+---
+# Real-world example: Initial data setup
+apiVersion: v1
+kind: Pod
+metadata:
+  name: app-with-data-init
+spec:
+  initContainers:
+  # Init: Download initial data from S3
+  - name: download-data
+    image: amazon/aws-cli:latest
+    command:
+    - /bin/sh
+    - -c
+    - |
+      aws s3 cp s3://my-bucket/initial-data.sql /data/
+      echo "Initial data downloaded"
+    volumeMounts:
+    - name: data
+      mountPath: /data
+    env:
+    - name: AWS_ACCESS_KEY_ID
+      valueFrom:
+        secretKeyRef:
+          name: aws-credentials
+          key: access-key
+    - name: AWS_SECRET_ACCESS_KEY
+      valueFrom:
+        secretKeyRef:
+          name: aws-credentials
+          key: secret-key
+
+  # Init: Load data into database
+  - name: load-data
+    image: postgres:14
+    command:
+    - /bin/sh
+    - -c
+    - |
+      psql -h postgres-server -U myuser -d mydb < /data/initial-data.sql
+    volumeMounts:
+    - name: data
+      mountPath: /data
+    env:
+    - name: PGPASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: postgres-credentials
+          key: password
+
+  containers:
+  - name: app
+    image: myapp:latest
+
+  volumes:
+  - name: data
+    emptyDir: {}
+
+---
+# Init containers for permission setup
+apiVersion: v1
+kind: Pod
+metadata:
+  name: app-with-permissions
+spec:
+  initContainers:
+  - name: setup-permissions
+    image: busybox:1.28
+    command:
+    - /bin/sh
+    - -c
+    - |
+      # Create directories with correct permissions
+      mkdir -p /data/logs
+      mkdir -p /data/cache
+      chmod 755 /data/logs
+      chmod 755 /data/cache
+      echo "Permissions configured"
+    volumeMounts:
+    - name: data
+      mountPath: /data
+
+  containers:
+  - name: app
+    image: myapp:latest
+    volumeMounts:
+    - name: data
+      mountPath: /app/data
+
+  volumes:
+  - name: data
+    hostPath:
+      path: /var/app-data
+      type: DirectoryOrCreate

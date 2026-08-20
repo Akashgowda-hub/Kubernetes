@@ -1,0 +1,190 @@
+---
+# Node with Taints
+# 
+# Taints prevent pods from being scheduled unless the pod has a toleration
+# Taint format: key=value:effect
+
+apiVersion: v1
+kind: Node
+metadata:
+  name: gpu-node-1
+# Note: Taints are applied via kubectl command:
+# kubectl taint nodes gpu-node-1 gpu=nvidia-a100:NoSchedule
+
+---
+# Pod with Tolerations
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gpu-workload
+  namespace: default
+spec:
+  # Tolerations: Allow pod to run on tainted nodes
+  tolerations:
+  # Tolerate exact taint match
+  - key: gpu
+    operator: Equal
+    value: nvidia-a100
+    effect: NoSchedule
+
+  containers:
+  - name: gpu-app
+    image: gpu-application:latest
+    resources:
+      limits:
+        nvidia.com/gpu: "1"
+
+---
+# Master Node Toleration
+# 
+# Control plane nodes are tainted by default
+# Taint: node-role.kubernetes.io/control-plane:NoSchedule
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: control-plane-pod
+spec:
+  # Allow pod to run on control plane node
+  tolerations:
+  - key: node-role.kubernetes.io/control-plane
+    operator: Exists
+    effect: NoSchedule
+
+  containers:
+  - name: system-app
+    image: system-app:latest
+
+---
+# Multiple Tolerations
+apiVersion: v1
+kind: Pod
+metadata:
+  name: multi-toleration-pod
+spec:
+  tolerations:
+  # Tolerate GPU nodes
+  - key: gpu-type
+    operator: Equal
+    value: nvidia
+    effect: NoSchedule
+
+  # Tolerate maintenance windows
+  - key: maintenance
+    operator: Equal
+    value: "true"
+    effect: NoExecute
+    tolerationSeconds: 3600  # Wait 1 hour before eviction
+
+  # Tolerate any node-not-ready (allow pod to stay 5 min)
+  - key: node.kubernetes.io/not-ready
+    operator: Exists
+    effect: NoExecute
+    tolerationSeconds: 300
+
+  containers:
+  - name: app
+    image: myapp:latest
+
+---
+# Toleration Operators
+
+# 1. Equal operator (exact match)
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-equal-toleration
+spec:
+  tolerations:
+  - key: tier
+    operator: Equal
+    value: backend
+    effect: NoSchedule
+
+  containers:
+  - name: app
+    image: app:latest
+
+---
+# 2. Exists operator (key must exist, value ignored)
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-exists-toleration
+spec:
+  tolerations:
+  # Pod tolerates ANY value for gpu key
+  - key: gpu
+    operator: Exists
+    effect: NoSchedule
+
+  containers:
+  - name: app
+    image: app:latest
+
+---
+# Taint Effects Explained
+
+# NoSchedule
+# - Pod not scheduled on tainted node
+# - Existing pods unaffected
+# - Use for: Dedicated nodes, maintenance prep
+
+# NoExecute
+# - Pod not scheduled on tainted node
+# - Existing pods evicted if no toleration
+# - Use for: Node draining, urgent maintenance
+
+# PreferNoSchedule
+# - Soft constraint (scheduler prefers other nodes)
+# - Still scheduled if no alternatives
+# - Use for: Preferential placement
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-all-effects
+spec:
+  tolerations:
+  # NoSchedule - soft: can be scheduled if needed
+  - key: env
+    operator: Equal
+    value: staging
+    effect: PreferNoSchedule
+
+  # NoExecute with timeout - wait 600 sec before eviction
+  - key: batch-job
+    operator: Exists
+    effect: NoExecute
+    tolerationSeconds: 600
+
+  containers:
+  - name: app
+    image: app:latest
+
+---
+# Production Example: Database Node Isolation
+
+# 1. Taint database nodes
+# kubectl taint nodes db-node-1 database=true:NoSchedule
+
+# 2. Pod that tolerates database node taint
+apiVersion: v1
+kind: Pod
+metadata:
+  name: mysql-pod
+spec:
+  # Database tolerates database node taint
+  tolerations:
+  - key: database
+    operator: Equal
+    value: "true"
+    effect: NoSchedule
+
+  # Additional: node selector to prefer database nodes
+  nodeSelector:
+    workload-type: database
+
+  containers:
+  - name: mysql
+    image: mysql:8.0

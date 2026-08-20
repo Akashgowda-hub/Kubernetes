@@ -1,0 +1,128 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-sidecar
+  namespace: default
+  labels:
+    app: web-with-logging
+spec:
+  containers:
+  # Main application container
+  - name: webapp
+    image: webapp:latest
+    ports:
+    - containerPort: 8080
+    volumeMounts:
+    - name: logs
+      mountPath: /var/log/app
+    resources:
+      requests:
+        cpu: "200m"
+        memory: "256Mi"
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+
+  # Sidecar: Log collector/forwarder
+  - name: log-collector
+    image: fluent-bit:latest
+    volumeMounts:
+    - name: logs
+      mountPath: /var/log/app
+    - name: fluent-config
+      mountPath: /fluent-bit/etc/fluent-bit.conf
+      subPath: fluent-bit.conf
+    resources:
+      requests:
+        cpu: "50m"
+        memory: "64Mi"
+      limits:
+        cpu: "100m"
+        memory: "128Mi"
+
+  # Sidecar: Metrics exporter
+  - name: metrics-agent
+    image: prometheus-exporter:latest
+    ports:
+    - containerPort: 9090
+    env:
+    - name: APP_PORT
+      value: "8080"
+    resources:
+      requests:
+        cpu: "50m"
+        memory: "64Mi"
+      limits:
+        cpu: "100m"
+        memory: "128Mi"
+
+  # Volumes shared between main app and sidecars
+  volumes:
+  - name: logs
+    emptyDir: {}
+  - name: fluent-config
+    configMap:
+      name: fluent-bit-config
+
+---
+# Sidecar Pattern: Service Mesh Proxy
+apiVersion: v1
+kind: Pod
+metadata:
+  name: app-with-envoy-sidecar
+spec:
+  containers:
+  # Main application
+  - name: app
+    image: myapp:latest
+    ports:
+    - containerPort: 8080
+
+  # Envoy proxy sidecar (service mesh)
+  - name: envoy-proxy
+    image: envoyproxy/envoy:v1.23
+    ports:
+    - containerPort: 10000  # Proxy port
+    volumeMounts:
+    - name: envoy-config
+      mountPath: /etc/envoy
+
+  volumes:
+  - name: envoy-config
+    configMap:
+      name: envoy-config
+
+---
+# Sidecar Pattern: SSL/TLS Termination
+apiVersion: v1
+kind: Pod
+metadata:
+  name: app-with-tls-sidecar
+spec:
+  containers:
+  # Application (only internal HTTP)
+  - name: app
+    image: webapp:latest
+    ports:
+    - containerPort: 8080
+
+  # SSL/TLS termination proxy
+  - name: ssl-terminator
+    image: nginx:latest
+    ports:
+    - containerPort: 443  # HTTPS
+    - containerPort: 80   # HTTP
+    volumeMounts:
+    - name: tls-certs
+      mountPath: /etc/nginx/certs
+    - name: nginx-config
+      mountPath: /etc/nginx/nginx.conf
+      subPath: nginx.conf
+
+  volumes:
+  - name: tls-certs
+    secret:
+      secretName: tls-certificates
+  - name: nginx-config
+    configMap:
+      name: nginx-tls-config

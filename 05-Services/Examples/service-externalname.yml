@@ -1,0 +1,55 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: external-database
+  namespace: default
+  labels:
+    app: database
+spec:
+  # ExternalName: Route to external DNS name (creates CNAME)
+  type: ExternalName
+  
+  # External DNS name to route to
+  externalName: postgres.database.example.com
+  
+  # Port configuration (optional)
+  ports:
+  - name: postgres
+    protocol: TCP
+    port: 5432
+    targetPort: 5432  # Usually same as port for ExternalName
+
+---
+# Example: ExternalName for cloud service
+apiVersion: v1
+kind: Service
+metadata:
+  name: aws-s3-storage
+  namespace: default
+spec:
+  type: ExternalName
+  externalName: s3.amazonaws.com
+  ports:
+  - protocol: TCP
+    port: 443
+    targetPort: 443
+
+---
+# Example: ExternalName for on-premises service
+apiVersion: v1
+kind: Service
+metadata:
+  name: legacy-api
+  namespace: default
+spec:
+  type: ExternalName
+  externalName: api.legacy-system.corp.local
+  ports:
+  - name: http
+    protocol: TCP
+    port: 8080
+    targetPort: 8080
+  - name: https
+    protocol: TCP
+    port: 8443
+    targetPort: 8443

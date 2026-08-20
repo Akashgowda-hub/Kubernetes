@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: app-replicaset-advanced
+  namespace: default
+spec:
+  replicas: 2
+  selector:
+    matchExpressions:
+    # Pod app must be either nginx or apache
+    - key: app
+      operator: In
+      values:
+      - nginx
+      - apache
+    # Pod tier must exist
+    - key: tier
+      operator: Exists
+    # Pod deprecated must not exist
+    - key: deprecated
+      operator: DoesNotExist
+    # Version must not be v0.9
+    - key: version
+      operator: NotIn
+      values:
+      - v0.9
+  template:
+    metadata:
+      labels:
+        app: nginx
+        tier: frontend
+        version: v1.0
+    spec:
+      containers:
+      - name: app
+        image: nginx:1.16-alpine
+        ports:
+        - containerPort: 80
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5

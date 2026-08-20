@@ -1,0 +1,222 @@
+---
+# Namespace with Resource Quota
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: team-dev
+
+---
+# Resource Quota: Limit total resources for namespace
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: dev-quota
+  namespace: team-dev
+spec:
+  hard:
+    # Pod limits
+    pods: "100"
+    
+    # CPU and Memory
+    requests.cpu: "10"            # Total CPU requests
+    requests.memory: "20Gi"       # Total Memory requests
+    limits.cpu: "20"              # Total CPU limits
+    limits.memory: "40Gi"         # Total Memory limits
+    
+    # Storage
+    persistentvolumeclaims: "10"
+    requests.storage: "100Gi"
+    
+    # Other resources
+    services: "50"
+    services.nodeports: "10"
+    services.loadbalancers: "5"
+    configmaps: "100"
+    secrets: "100"
+
+---
+# Limit Range: Per-container and per-pod limits
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: dev-limits
+  namespace: team-dev
+spec:
+  limits:
+  # Container limits
+  - type: Container
+    max:
+      cpu: "2"
+      memory: "2Gi"
+    min:
+      cpu: "50m"
+      memory: "64Mi"
+    default:
+      # Default limits if not specified
+      cpu: "500m"
+      memory: "512Mi"
+    defaultRequest:
+      # Default requests if not specified
+      cpu: "250m"
+      memory: "256Mi"
+    
+  # Pod limits
+  - type: Pod
+    max:
+      cpu: "4"
+      memory: "4Gi"
+    min:
+      cpu: "100m"
+      memory: "128Mi"
+
+---
+# ResourceQuota Scopes (Kubernetes 1.24+)
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: scoped-quota
+  namespace: team-dev
+spec:
+  # Only count pods matching these criteria
+  scopes:
+  - BestEffort      # Count only pods without requests/limits
+  - NotBestEffort   # Count only guaranteed/burstable pods
+  - Terminating     # Count active pods (activeDeadlineSeconds not set)
+  - NotTerminating  # Count jobs with activeDeadlineSeconds
+  
+  hard:
+    pods: "50"
+    requests.cpu: "5"
+    requests.memory: "10Gi"
+
+---
+# Multiple LimitRanges
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: strict-limits
+  namespace: team-dev
+spec:
+  limits:
+  # Guaranteed QoS pods (production)
+  - type: Pod
+    min:
+      cpu: "500m"
+      memory: "512Mi"
+    max:
+      cpu: "2"
+      memory: "2Gi"
+  
+  # Per-container
+  - type: Container
+    min:
+      cpu: "100m"
+      memory: "128Mi"
+    max:
+      cpu: "1"
+      memory: "1Gi"
+    default:
+      cpu: "500m"
+      memory: "512Mi"
+    defaultRequest:
+      cpu: "250m"
+      memory: "256Mi"
+
+---
+# ResourceQuota Status Check Example
+# 
+# View quota status:
+# kubectl describe resourcequota -n team-dev
+# 
+# Example output:
+# Name: dev-quota
+# Status:
+#   Hard:
+#     limits.cpu: 20
+#     limits.memory: 40Gi
+#     pods: 100
+#     requests.cpu: 10
+#     requests.memory: 20Gi
+#   Used:
+#     limits.cpu: 2500m
+#     limits.memory: 2560Mi
+#     pods: 10
+#     requests.cpu: 1500m
+#     requests.memory: 1536Mi
+
+---
+# Pod that respects ResourceQuota and LimitRange
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quota-compliant-app
+  namespace: team-dev
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: myapp
+  template:
+    metadata:
+      labels:
+        app: myapp
+    spec:
+      containers:
+      - name: app
+        image: myapp:latest
+        
+        # Must respect namespace ResourceQuota
+        resources:
+          requests:
+            cpu: "250m"       # Part of requests.cpu quota
+            memory: "256Mi"   # Part of requests.memory quota
+          limits:
+            cpu: "500m"       # Part of limits.cpu quota
+            memory: "512Mi"   # Part of limits.memory quota
+
+---
+# Common ResourceQuota Scenarios
+
+# 1. Development namespace (permissive)
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: dev-quota
+spec:
+  hard:
+    requests.cpu: "10"
+    requests.memory: "20Gi"
+    limits.cpu: "20"
+    limits.memory: "40Gi"
+    pods: "200"
+
+# 2. Production namespace (strict)
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: prod-quota
+spec:
+  hard:
+    requests.cpu: "100"
+    requests.memory: "200Gi"
+    limits.cpu: "200"
+    limits.memory: "400Gi"
+    pods: "500"
+    services.loadbalancers: "10"
+
+# 3. Batch namespace (jobs focused)
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: batch-quota
+spec:
+  scopes:
+  - NotTerminating  # Only for job-like resources
+  hard:
+    requests.cpu: "50"
+    requests.memory: "100Gi"
+    limits.cpu: "100"
+    limits.memory: "200Gi"

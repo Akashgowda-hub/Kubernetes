@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: gpu-monitor
+  namespace: default
+  labels:
+    app: gpu-monitor
+spec:
+  selector:
+    matchLabels:
+      app: gpu-monitor
+  template:
+    metadata:
+      labels:
+        app: gpu-monitor
+    spec:
+      # Only run on nodes with gpu=true label
+      nodeSelector:
+        gpu: "true"
+      
+      # Node affinity for more complex scheduling rules
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node.kubernetes.io/instance-type
+                operator: In
+                values:
+                - gpu-node
+                - accelerator-node
+      
+      # Tolerate GPU node taints
+      tolerations:
+      - key: nvidia.com/gpu
+        operator: Exists
+        effect: NoSchedule
+      
+      containers:
+      - name: gpu-monitor
+        image: nvidia/gpu-monitor:latest
+        
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "64Mi"
+          limits:
+            cpu: "200m"
+            memory: "128Mi"
+        
+        env:
+        - name: NVIDIA_VISIBLE_DEVICES
+          value: "all"
+        
+        volumeMounts:
+        - name: nvidia-install-dir
+          mountPath: /usr/local/nvidia
+      
+      volumes:
+      - name: nvidia-install-dir
+        hostPath:
+          path: /usr/local/nvidia

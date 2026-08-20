@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: batch-processor-recreate
+  namespace: default
+spec:
+  replicas: 2
+  # Recreate strategy - terminate all old pods before creating new ones
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: batch-processor
+  template:
+    metadata:
+      labels:
+        app: batch-processor
+        version: v1.5
+    spec:
+      containers:
+      - name: processor
+        image: batch-processor:1.5
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "512Mi"
+          limits:
+            cpu: "1"
+            memory: "1Gi"
+        env:
+        - name: LOG_LEVEL
+          value: "info"

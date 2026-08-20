@@ -1,0 +1,74 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: multicontainer-pod
+  namespace: default
+  labels:
+    app: web-app
+spec:
+  # Shared network namespace - all containers share IP
+  # Containers communicate via localhost
+  
+  containers:
+  # Container 1: Main application
+  - name: app
+    image: webapp:1.0
+    ports:
+    - containerPort: 8080
+      name: http
+    env:
+    - name: LOG_PATH
+      value: /var/log/app
+    volumeMounts:
+    - name: app-logs
+      mountPath: /var/log/app
+
+  # Container 2: Logging sidecar
+  - name: log-forwarder
+    image: logging-agent:latest
+    volumeMounts:
+    - name: app-logs
+      mountPath: /var/log/app
+    env:
+    - name: FORWARD_TO
+      value: "logserver.default.svc.cluster.local:514"
+
+  # Container 3: Monitoring sidecar
+  - name: metrics-exporter
+    image: metrics-exporter:latest
+    ports:
+    - containerPort: 9090
+      name: metrics
+    env:
+    - name: TARGET_PORT
+      value: "8080"
+
+  # Shared volumes (accessible to all containers)
+  volumes:
+  - name: app-logs
+    emptyDir: {}
+
+---
+# Multi-container with init container
+apiVersion: v1
+kind: Pod
+metadata:
+  name: multicontainer-with-init
+spec:
+  # Init containers run first and must complete successfully
+  initContainers:
+  - name: setup
+    image: busybox:1.28
+    command: ['sh', '-c', 'echo Setup complete']
+
+  # Main containers
+  containers:
+  - name: main-app
+    image: myapp:latest
+    ports:
+    - containerPort: 8080
+
+  - name: helper
+    image: helper:latest
+    ports:
+    - containerPort: 3000

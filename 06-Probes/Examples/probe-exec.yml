@@ -1,0 +1,159 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: exec-probe-example
+  namespace: default
+spec:
+  containers:
+  - name: app
+    image: ubuntu:22.04
+    command:
+    - /bin/sh
+    - -c
+    - |
+      # Simulate application
+      while true; do
+        sleep 1
+      done
+    
+    # Startup Probe with exec command
+    # Check if app initialization file exists
+    startupProbe:
+      exec:
+        command:
+        - /bin/sh
+        - -c
+        - test -f /tmp/app-ready
+      periodSeconds: 5
+      failureThreshold: 30
+    
+    # Readiness Probe with exec command
+    # Check if app is ready by running script
+    readinessProbe:
+      exec:
+        command:
+        - /bin/sh
+        - -c
+        - curl -f http://localhost:8080/health/ready || exit 1
+      initialDelaySeconds: 5
+      periodSeconds: 5
+      timeoutSeconds: 2
+      failureThreshold: 2
+    
+    # Liveness Probe with exec command
+    # Check if process is still running
+    livenessProbe:
+      exec:
+        command:
+        - /bin/sh
+        - -c
+        - ps aux | grep -v grep | grep myapp
+      initialDelaySeconds: 15
+      periodSeconds: 10
+      timeoutSeconds: 2
+      failureThreshold: 3
+
+---
+# PostgreSQL with exec probe for query execution
+apiVersion: v1
+kind: Pod
+metadata:
+  name: postgres-exec-probe
+spec:
+  containers:
+  - name: postgres
+    image: postgres:14
+    ports:
+    - containerPort: 5432
+    
+    env:
+    - name: POSTGRES_PASSWORD
+      value: "postgres"
+    
+    # Exec probe using pg_isready
+    readinessProbe:
+      exec:
+        command:
+        - /bin/sh
+        - -c
+        - "pg_isready -U postgres"
+      initialDelaySeconds: 10
+      periodSeconds: 5
+    
+    livenessProbe:
+      exec:
+        command:
+        - /bin/sh
+        - -c
+        - "pg_isready -U postgres"
+      initialDelaySeconds: 15
+      periodSeconds: 10
+
+---
+# Custom script probe
+apiVersion: v1
+kind: Pod
+metadata:
+  name: custom-script-probe
+spec:
+  containers:
+  - name: app
+    image: myapp:latest
+    
+    volumeMounts:
+    - name: scripts
+      mountPath: /scripts
+    
+    # Use custom script for health check
+    livenessProbe:
+      exec:
+        command:
+        - /scripts/health-check.sh
+      periodSeconds: 10
+      failureThreshold: 3
+  
+  volumes:
+  - name: scripts
+    configMap:
+      name: health-check-scripts
+      defaultMode: 0755
+
+---
+# MongoDB with exec probe
+apiVersion: v1
+kind: Pod
+metadata:
+  name: mongodb-exec-probe
+spec:
+  containers:
+  - name: mongodb
+    image: mongo:5.0
+    ports:
+    - containerPort: 27017
+    
+    startupProbe:
+      exec:
+        command:
+        - /bin/sh
+        - -c
+        - "mongosh --eval 'db.adminCommand(\"ping\")'"
+      failureThreshold: 30
+      periodSeconds: 5
+    
+    readinessProbe:
+      exec:
+        command:
+        - /bin/sh
+        - -c
+        - "mongosh --eval 'db.adminCommand(\"ping\")' | grep ok"
+      initialDelaySeconds: 10
+      periodSeconds: 5
+    
+    livenessProbe:
+      exec:
+        command:
+        - /bin/sh
+        - -c
+        - "mongosh --eval 'db.adminCommand(\"ping\")'"
+      initialDelaySeconds: 15
+      periodSeconds: 10

@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-nodeport
+  namespace: default
+  labels:
+    app: web
+  annotations:
+    description: "NodePort service accessible on all nodes"
+spec:
+  # NodePort: Expose service on each node at static port
+  type: NodePort
+  
+  # Label selector for backend pods
+  selector:
+    app: nginx
+    tier: frontend
+  
+  # Ports configuration
+  ports:
+  - name: http
+    protocol: TCP
+    port: 80              # Service port (ClusterIP)
+    targetPort: 8080      # Pod container port
+    nodePort: 30080       # Node port (30000-32767)
+                          # Leave empty for automatic assignment
+  
+  # External IPs (optional - requires external infrastructure)
+  # externalIPs:
+  # - 192.168.1.100
+  
+  # Load balancer source ranges (restrict access)
+  # loadBalancerSourceRanges:
+  # - "10.0.0.0/8"
+  # - "172.16.0.0/12"

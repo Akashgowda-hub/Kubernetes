@@ -1,0 +1,68 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-multiport-service
+  namespace: default
+  labels:
+    app: myapp
+spec:
+  type: ClusterIP
+  
+  selector:
+    app: myapp
+  
+  # Multiple ports - each must have a name
+  ports:
+  # HTTP port
+  - name: http
+    protocol: TCP
+    port: 80
+    targetPort: 8080
+  
+  # HTTPS port
+  - name: https
+    protocol: TCP
+    port: 443
+    targetPort: 8443
+  
+  # Metrics port
+  - name: metrics
+    protocol: TCP
+    port: 9090
+    targetPort: 9090
+  
+  # gRPC port
+  - name: grpc
+    protocol: TCP
+    port: 50051
+    targetPort: 50051
+  
+  # Debug port
+  - name: debug
+    protocol: TCP
+    port: 40000
+    targetPort: 40000
+
+---
+# Alternative: Headless multiport service
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-multiport-headless
+  namespace: default
+spec:
+  type: ClusterIP
+  clusterIP: None
+  
+  selector:
+    app: myapp
+  
+  ports:
+  - name: http
+    protocol: TCP
+    port: 8080
+    targetPort: 8080
+  - name: metrics
+    protocol: TCP
+    port: 9090
+    targetPort: 9090

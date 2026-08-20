@@ -1,0 +1,71 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: daily-database-cleanup
+  namespace: default
+spec:
+  # Cron schedule: Daily at 2 AM UTC
+  schedule: "0 2 * * *"
+  
+  # Timezone for schedule (optional, Kubernetes 1.25+)
+  # timeZone: "America/New_York"
+  
+  # Number of successful jobs to keep history
+  successfulJobsHistoryLimit: 3
+  
+  # Number of failed jobs to keep history
+  failedJobsHistoryLimit: 1
+  
+  # Concurrency policy:
+  # - Allow: Multiple jobs can run concurrently
+  # - Forbid: Previous job must complete before next starts
+  # - Replace: Terminate running job and start new one
+  concurrencyPolicy: Forbid
+  
+  # Suspend cronjob temporarily
+  suspend: false
+  
+  jobTemplate:
+    spec:
+      # Time limit for job
+      activeDeadlineSeconds: 3600
+      # Number of retries
+      backoffLimit: 2
+      # Clean up old jobs after 7 days
+      ttlSecondsAfterFinished: 604800
+      
+      template:
+        metadata:
+          labels:
+            app: db-cleanup
+        spec:
+          restartPolicy: OnFailure
+          
+          containers:
+          - name: cleanup
+            image: postgres:14
+            command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Starting database cleanup..."
+              psql -h postgres.default.svc.cluster.local \
+                -U cleanup_user \
+                -d production_db \
+                -c "DELETE FROM audit_logs WHERE created_at < now() - interval '90 days';"
+              echo "Database cleanup completed"
+            
+            env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: cleanup-password
+            
+            resources:
+              requests:
+                cpu: "250m"
+                memory: "256Mi"
+              limits:
+                cpu: "500m"
+                memory: "512Mi"

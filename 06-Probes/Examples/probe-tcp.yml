@@ -1,0 +1,112 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: tcp-probe-example
+  namespace: default
+spec:
+  containers:
+  - name: database
+    image: postgres:14
+    ports:
+    - containerPort: 5432
+      name: postgres
+    
+    env:
+    - name: POSTGRES_PASSWORD
+      value: "postgres"
+    - name: POSTGRES_USER
+      value: "postgres"
+    - name: POSTGRES_DB
+      value: "testdb"
+    
+    # TCP Socket Startup Probe
+    # Checks if database port is accepting connections
+    startupProbe:
+      tcpSocket:
+        port: postgres
+        # host: localhost  # Optional, default is pod IP
+      initialDelaySeconds: 0
+      periodSeconds: 5
+      timeoutSeconds: 1
+      failureThreshold: 30
+    
+    # TCP Socket Readiness Probe
+    # Checks if database is ready to accept queries
+    readinessProbe:
+      tcpSocket:
+        port: 5432
+      initialDelaySeconds: 10
+      periodSeconds: 5
+      timeoutSeconds: 2
+      failureThreshold: 2
+    
+    # TCP Socket Liveness Probe
+    # Checks if database connection is still alive
+    livenessProbe:
+      tcpSocket:
+        port: postgres
+      initialDelaySeconds: 15
+      periodSeconds: 10
+      timeoutSeconds: 2
+      failureThreshold: 3
+
+---
+# Redis with TCP probe
+apiVersion: v1
+kind: Pod
+metadata:
+  name: redis-with-tcp-probe
+spec:
+  containers:
+  - name: redis
+    image: redis:7-alpine
+    ports:
+    - containerPort: 6379
+    
+    # TCP probe for Redis
+    livenessProbe:
+      tcpSocket:
+        port: 6379
+      initialDelaySeconds: 10
+      periodSeconds: 5
+    
+    readinessProbe:
+      tcpSocket:
+        port: 6379
+      initialDelaySeconds: 5
+      periodSeconds: 5
+
+---
+# MySQL with TCP probe
+apiVersion: v1
+kind: Pod
+metadata:
+  name: mysql-with-tcp-probe
+spec:
+  containers:
+  - name: mysql
+    image: mysql:8.0
+    ports:
+    - containerPort: 3306
+    
+    env:
+    - name: MYSQL_ROOT_PASSWORD
+      value: "root"
+    
+    startupProbe:
+      tcpSocket:
+        port: 3306
+      failureThreshold: 30
+      periodSeconds: 5
+    
+    readinessProbe:
+      tcpSocket:
+        port: 3306
+      initialDelaySeconds: 10
+      periodSeconds: 5
+    
+    livenessProbe:
+      tcpSocket:
+        port: 3306
+      initialDelaySeconds: 15
+      periodSeconds: 10

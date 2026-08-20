@@ -1,0 +1,52 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: http-probe-example
+  namespace: default
+spec:
+  containers:
+  - name: web
+    image: httpbin:latest
+    ports:
+    - containerPort: 8080
+    
+    # HTTP GET Startup Probe
+    # Waits for application to fully initialize
+    startupProbe:
+      httpGet:
+        path: /status/200
+        port: 8080
+        scheme: HTTP
+      initialDelaySeconds: 0
+      periodSeconds: 5
+      timeoutSeconds: 1
+      failureThreshold: 30  # Max 150 seconds (30 * 5)
+    
+    # HTTP GET Readiness Probe
+    # Determines if pod should receive traffic
+    readinessProbe:
+      httpGet:
+        path: /health/ready
+        port: 8080
+        scheme: HTTP
+        # Optional: Add custom headers
+        httpHeaders:
+        - name: X-Custom-Header
+          value: "readiness-check"
+      initialDelaySeconds: 5
+      periodSeconds: 5
+      timeoutSeconds: 2
+      failureThreshold: 2
+      successThreshold: 1
+    
+    # HTTP GET Liveness Probe
+    # Determines if container should be restarted
+    livenessProbe:
+      httpGet:
+        path: /health/live
+        port: 8080
+        scheme: HTTP
+      initialDelaySeconds: 15
+      periodSeconds: 10
+      timeoutSeconds: 2
+      failureThreshold: 3

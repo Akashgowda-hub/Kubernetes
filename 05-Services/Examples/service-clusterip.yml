@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-clusterip
+  namespace: default
+  labels:
+    app: web
+  annotations:
+    description: "ClusterIP service for internal Kubernetes communication"
+spec:
+  # ClusterIP: Service only accessible within cluster
+  type: ClusterIP
+  
+  # Service IP (leave empty for automatic assignment)
+  clusterIP: 10.96.0.100  # Optional: specify if needed
+  
+  # Label selector for backend pods
+  selector:
+    app: nginx
+    tier: frontend
+  
+  # Ports configuration
+  ports:
+  - name: http
+    protocol: TCP
+    port: 80              # Service port (exposed internally)
+    targetPort: 8080      # Pod container port
+  
+  # Session affinity (stick client to same pod)
+  sessionAffinity: None   # or ClientIP
+  # sessionAffinityConfig:
+  #   clientIP:
+  #     timeoutSeconds: 10800
+  
+  # DNS policy
+  dnsPolicy: ClusterFirst

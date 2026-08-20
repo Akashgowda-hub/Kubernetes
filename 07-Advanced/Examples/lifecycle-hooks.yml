@@ -1,0 +1,221 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-lifecycle-hooks
+  namespace: default
+spec:
+  # Grace period for graceful shutdown
+  terminationGracePeriodSeconds: 30
+  
+  containers:
+  - name: app
+    image: webapp:latest
+    ports:
+    - containerPort: 8080
+    
+    # ┌─────────────────────────────────────┐
+    # │ postStart Hook                      │
+    # │ Runs after container created       │
+    # │ Asynchronous (app starts in parallel)
+    # │ Failure doesn't prevent pod startup │
+    # └─────────────────────────────────────┘
+    lifecycle:
+      postStart:
+        # Method 1: HTTP call
+        httpGet:
+          path: /init
+          port: 8080
+          scheme: HTTP
+        # or
+        # Method 2: Execute command
+        # exec:
+        #   command:
+        #   - /bin/sh
+        #   - -c
+        #   - "echo 'App starting' > /tmp/app.log"
+
+    # ┌─────────────────────────────────────┐
+    # │ preStop Hook                        │
+    # │ Runs before termination             │
+    # │ Synchronous (blocking)              │
+    # │ Opportunity for graceful shutdown   │
+    # │ Must complete within grace period   │
+    # └─────────────────────────────────────┘
+      preStop:
+        exec:
+          command:
+          - /bin/sh
+          - -c
+          - |
+            echo "Graceful shutdown started..."
+            # Notify app to stop accepting connections
+            curl -X POST http://localhost:8080/shutdown || true
+            # Wait for existing requests to complete
+            sleep 15
+            echo "Graceful shutdown complete"
+
+---
+# postStart Example: Database schema initialization
+apiVersion: v1
+kind: Pod
+metadata:
+  name: app-with-poststart-db-init
+spec:
+  containers:
+  - name: app
+    image: app-with-db:latest
+    ports:
+    - containerPort: 8080
+    
+    lifecycle:
+      postStart:
+        exec:
+          command:
+          - /bin/sh
+          - -c
+          - |
+            echo "Initializing database schema..."
+            # Wait for database connection
+            until psql -h postgres-server -U myuser -d mydb -c "SELECT 1"; do
+              echo "Waiting for database..."
+              sleep 2
+            done
+            # Run schema initialization
+            psql -h postgres-server -U myuser -d mydb < /app/schema.sql
+            echo "Database initialized"
+    
+    env:
+    - name: PGPASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: postgres-credentials
+          key: password
+
+---
+# preStop Example: Load balancer connection draining
+apiVersion: v1
+kind: Pod
+metadata:
+  name: webapp-graceful-shutdown
+spec:
+  terminationGracePeriodSeconds: 30
+  
+  containers:
+  - name: web
+    image: webapp:latest
+    ports:
+    - containerPort: 8080
+    
+    lifecycle:
+      preStop:
+        exec:
+          command:
+          - /bin/sh
+          - -c
+          - |
+            # Signal load balancer to stop sending traffic
+            echo "Removing from load balancer..."
+            curl -X PUT http://load-balancer:8081/remove-endpoint \
+              -d "{\"pod_ip\": \"$HOSTNAME\"}" || true
+            
+            # Wait for connections to drain (max 25 sec)
+            # Grace period is 30 sec, so 25 sec is safe
+            sleep 25
+            
+            echo "Pod ready for termination"
+
+---
+# Complete Graceful Shutdown Pattern
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: graceful-shutdown-deployment
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      # Allow 30 seconds for graceful shutdown
+      terminationGracePeriodSeconds: 30
+      
+      containers:
+      - name: api
+        image: api-server:2.0
+        ports:
+        - containerPort: 8080
+        
+        lifecycle:
+          # preStop: Gracefully stop receiving traffic
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - |
+                #!/bin/sh
+                echo "$(date): Shutting down gracefully..."
+                
+                # 1. Signal application to stop accepting new connections
+                curl -X POST http://localhost:8080/api/shutdown \
+                  -H "Content-Type: application/json" \
+                  -d '{"graceful": true}' \
+                  2>/dev/null || echo "App already stopping"
+                
+                # 2. Wait for existing connections to complete
+                # Check every 1 second for up to 20 seconds
+                for i in $(seq 1 20); do
+                  ACTIVE=$(curl -s http://localhost:8080/metrics/active-connections | grep -o '[0-9]*' | head -1)
+                  if [ "$ACTIVE" = "0" ] || [ -z "$ACTIVE" ]; then
+                    echo "No active connections, ready to terminate"
+                    exit 0
+                  fi
+                  echo "Waiting... Active connections: $ACTIVE"
+                  sleep 1
+                done
+                
+                # 3. Force shutdown if still has connections
+                echo "Force shutdown - grace period ending"
+                exit 0
+      
+      # Strategy: rolling update with zero downtime
+      strategy:
+        type: RollingUpdate
+        rollingUpdate:
+          maxUnavailable: 0    # Keep all replicas available
+          maxSurge: 1          # One extra pod during update
+
+---
+# postStart Failure Handling
+apiVersion: v1
+kind: Pod
+metadata:
+  name: poststart-with-retry
+spec:
+  containers:
+  - name: app
+    image: app:latest
+    
+    lifecycle:
+      postStart:
+        exec:
+          command:
+          - /bin/sh
+          - -c
+          - |
+            # Retry logic (postStart failures are logged but don't prevent startup)
+            for i in 1 2 3; do
+              if /app/initialize.sh; then
+                echo "Initialization successful"
+                exit 0
+              fi
+              echo "Attempt $i failed, retrying..."
+              sleep 2
+            done
+            # postStart failure doesn't prevent pod from starting
+            echo "Initialization failed but pod continues running"
+            exit 1

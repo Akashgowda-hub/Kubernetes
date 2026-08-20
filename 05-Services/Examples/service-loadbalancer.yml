@@ -1,0 +1,48 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: webapp-loadbalancer
+  namespace: default
+  labels:
+    app: web
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    # For AWS-specific annotations
+spec:
+  # LoadBalancer: Provision external load balancer (cloud provider specific)
+  type: LoadBalancer
+  
+  # Label selector for backend pods
+  selector:
+    app: webapp
+    tier: frontend
+  
+  # Ports configuration
+  ports:
+  - name: http
+    protocol: TCP
+    port: 80
+    targetPort: 8080
+  - name: https
+    protocol: TCP
+    port: 443
+    targetPort: 8443
+  
+  # Session affinity
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 10800  # 3 hours
+  
+  # Load balancer source ranges (restrict traffic)
+  loadBalancerSourceRanges:
+  - "0.0.0.0/0"  # Allow from anywhere (less secure)
+  # - "203.0.113.0/24"  # Restrict to specific CIDR
+  
+  # Health check parameters (cloud provider specific)
+  # healthCheckNodePort: 30000  # Explicit port for health checks
+  
+  # External traffic policy
+  # Local: Route only to local node pods (preserves source IP)
+  # Cluster: Route to any pod in cluster (default)
+  externalTrafficPolicy: Cluster

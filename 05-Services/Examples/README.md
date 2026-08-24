@@ -15,6 +15,18 @@ This directory contains practical YAML examples for Kubernetes Services.
 - `service-multiport.yml` - Service with multiple ports
 - `service-with-sessionaffinity.yml` - Service with session affinity
 
+### Ingress and TLS
+- `ingress-basic.yml` - Basic host-based ingress
+- `ingress-path-based-routing.yml` - Path-based routing (`/api` and `/`)
+- `ingress-header-based-routing.yml` - Header-based routing (NGINX canary header)
+- `ingress-tls-selfsigned.yml` - TLS termination with self-signed cert secret
+
+### Detailed Ingress Learning Structure
+- `../Ingress/README.md` - Ingress fundamentals, controller choice, cost discussion, install steps
+- `../Ingress/Path-Based/` - Path-based routing notes and examples
+- `../Ingress/Header-Based/` - Header-based routing notes and examples
+- `../Ingress/TLS-Self-Signed/` - TLS termination and self-signed step-by-step
+
 ## Service Architecture Overview
 
 ```
@@ -57,9 +69,20 @@ kubectl apply -f service-clusterip.yml
 # Apply a NodePort service
 kubectl apply -f service-nodeport.yml
 
+# Install NGINX ingress controller
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/cloud/deploy.yaml
+
+# Apply ingress examples
+kubectl apply -f ingress-basic.yml
+kubectl apply -f ingress-path-based-routing.yml
+
 # View services
 kubectl get svc
 kubectl get svc -o wide
+
+# View ingress resources
+kubectl get ingress
+kubectl describe ingress app-path-routing
 
 # Get service endpoints
 kubectl get endpoints
@@ -67,6 +90,12 @@ kubectl get endpoints
 # Test service connectivity
 kubectl run -it --rm debug --image=busybox -- sh
 # Inside pod: wget service-name:port
+
+# Test ingress by host header
+curl -H "Host: app.k8s.local" http://<INGRESS_IP>/
+
+# Test header-based routing to canary
+curl -H "Host: app.k8s.local" -H "x-canary: always" http://<INGRESS_IP>/
 ```
 
 ## Service Selection and Routing
@@ -98,3 +127,5 @@ kubectl run -it --rm debug --image=busybox -- sh
 ```
 
 See individual YAML files for detailed examples and configurations.
+
+For full ingress deep-dive, use the dedicated folder tree under `05-Services/Ingress/`.

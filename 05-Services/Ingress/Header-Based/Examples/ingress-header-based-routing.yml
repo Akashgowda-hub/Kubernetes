@@ -1,0 +1,41 @@
+# Base ingress: default traffic goes to main service.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app-main
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: app.akashshankar.in
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: web-main-service
+            port:
+              number: 80
+---
+# Header-based ingress: route traffic to tools service when request has header x-route: tools.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app-header-routing
+  annotations:
+    nginx.ingress.kubernetes.io/canary: "true"
+    nginx.ingress.kubernetes.io/canary-by-header: "x-route"
+    nginx.ingress.kubernetes.io/canary-by-header-value: "tools"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: app.akashshankar.in
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: web-tools-service
+            port:
+              number: 80

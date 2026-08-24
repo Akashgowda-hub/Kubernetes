@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-main-deployment
+  labels:
+    app: web-main
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web-main
+  template:
+    metadata:
+      labels:
+        app: web-main
+    spec:
+      containers:
+      - name: web-main
+        image: nginx:1.27-alpine
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: web-main-content
+          mountPath: /usr/share/nginx/html
+      volumes:
+      - name: web-main-content
+        configMap:
+          name: web-main-content
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-main-service
+spec:
+  selector:
+    app: web-main
+  ports:
+  - port: 80
+    targetPort: 80
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-main-content
+data:
+  index.html: |
+    <html><body><h1>Main Site - app.akashshankar.in</h1></body></html>
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-tools-deployment
+  labels:
+    app: web-tools
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web-tools
+  template:
+    metadata:
+      labels:
+        app: web-tools
+    spec:
+      containers:
+      - name: web-tools
+        image: nginx:1.27-alpine
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: web-tools-content
+          mountPath: /usr/share/nginx/html
+      volumes:
+      - name: web-tools-content
+        configMap:
+          name: web-tools-content
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-tools-service
+spec:
+  selector:
+    app: web-tools
+  ports:
+  - port: 80
+    targetPort: 80
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-tools-content
+data:
+  index.html: |
+    <html><body><h1>Tools Site - x-route: tools</h1></body></html>

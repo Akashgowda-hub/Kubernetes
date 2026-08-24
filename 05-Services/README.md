@@ -296,6 +296,195 @@ spec:
     targetPort: 8080
 ```
 
+**DNS behavior (important):**
+- Normal Service returns one virtual IP (ClusterIP).
+- Headless Service returns pod IPs directly via DNS records.
+- Commonly used with StatefulSet for stable network identity.
+
+**Headless traffic view:**
+
+```
+┌──────────────────────┐
+│      Client Pod      │
+└──────────┬───────────┘
+     │ DNS query: app-headless.default.svc.cluster.local
+┌──────────▼───────────┐
+│      CoreDNS         │
+└──────────┬───────────┘
+     │ Returns multiple pod IPs
+┌──────────▼───────────┐
+│ 10.244.1.10 (Pod A)  │
+│ 10.244.2.20 (Pod B)  │
+│ 10.244.3.30 (Pod C)  │
+└──────────────────────┘
+```
+
+## Ingress and Ingress Controller
+
+### What is Ingress?
+
+Ingress is a Kubernetes API object that manages external HTTP/HTTPS access to services inside the cluster.
+
+It provides:
+- Host-based routing (example: `app.example.com` to one service)
+- Path-based routing (example: `/api` to API service, `/` to web service)
+- TLS/SSL termination at the edge
+
+### Ingress vs Service
+
+- Service (`ClusterIP`/`NodePort`/`LoadBalancer`) exposes one service endpoint.
+- Ingress provides L7 routing rules across multiple services.
+- Ingress requires an Ingress Controller to work.
+
+### What is an Ingress Controller?
+
+Ingress resource is just configuration. The controller is the actual data-plane component that reads those rules and routes traffic.
+
+Popular controllers:
+- NGINX Ingress Controller
+- HAProxy Ingress
+- Traefik
+- Cloud-native controllers (AWS ALB, GCE Ingress)
+
+### Traffic flow with Ingress
+
+```
+┌───────────────┐
+│ Internet User │
+└───────┬───────┘
+  │ HTTPS/HTTP
+┌───────▼──────────────────┐
+│ LoadBalancer / NodePort  │
+│ for Ingress Controller   │
+└───────┬──────────────────┘
+  │
+┌───────▼──────────────────┐
+│ Ingress Controller Pod   │
+│ (NGINX/HAProxy/Traefik)  │
+└───────┬──────────────────┘
+  │ Reads Ingress rules
+┌───────▼──────────────────┐
+│       Ingress Rule       │
+│ host + path + tls        │
+└───────┬──────────────────┘
+  │
+┌───────▼───────────┐
+│   Service (SVC)   │
+└───────┬───────────┘
+  │
+┌───────▼───────────┐
+│       Pods        │
+└───────────────────┘
+```
+
+### Install Ingress Controller (NGINX) with kubeadm clusters
+
+#### Step 1: Install controller manifest
+
+```bash
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/cloud/deploy.yaml
+```
+
+#### Step 2: Verify controller pods
+
+```bash
+kubectl get pods -n ingress-nginx
+kubectl get deploy -n ingress-nginx
+```
+
+#### Step 3: Verify controller service
+
+```bash
+kubectl get svc -n ingress-nginx
+```
+
+If your environment does not provide external LoadBalancer automatically, expose controller with NodePort or use MetalLB.
+
+#### Step 4: Set ingressClassName
+
+Use `ingressClassName: nginx` in Ingress resources.
+
+### Path-based routing example
+
+Use one host and split by URL path:
+- `/api` -> `api-service`
+- `/` -> `web-service`
+
+See YAML: `05-Services/Examples/ingress-path-based-routing.yml`
+
+### Header-based routing example
+
+Header-based routing depends on controller capabilities.
+
+For NGINX Ingress, a common method is canary annotations:
+- Route to canary service when header exists (example: `x-canary: always`)
+
+See YAML: `05-Services/Examples/ingress-header-based-routing.yml`
+
+### TLS and SSL termination in Ingress
+
+TLS termination means HTTPS is terminated at Ingress Controller. Backend service/pod can still run HTTP internally.
+
+```
+┌───────────────┐        TLS (443)        ┌─────────────────────────┐
+│    Client     │ ───────────────────────> │ Ingress Controller      │
+└───────────────┘                          │ (TLS termination point) │
+             └───────────┬─────────────┘
+                   │ HTTP (80)
+             ┌───────────▼─────────────┐
+             │  Service -> Pod backend  │
+             └─────────────────────────┘
+```
+
+### Self-signed certificate: detailed steps
+
+#### Step 1: Create private key and certificate
+
+```bash
+# Replace CN with your host
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  -keyout tls.key \
+  -out tls.crt \
+  -subj "/CN=demo.k8s.local/O=demo"
+```
+
+#### Step 2: Create Kubernetes TLS secret
+
+```bash
+kubectl create secret tls demo-tls-secret \
+  --cert=tls.crt \
+  --key=tls.key
+```
+
+#### Step 3: Create Ingress with TLS
+
+Use `secretName: demo-tls-secret` under `spec.tls`.
+
+See YAML: `05-Services/Examples/ingress-tls-selfsigned.yml`
+
+#### Step 4: Map DNS/hosts entry for testing
+
+For local testing, add your ingress endpoint IP to hosts file.
+
+Linux/macOS:
+```bash
+sudo sh -c 'echo "<INGRESS_IP> demo.k8s.local" >> /etc/hosts'
+```
+
+Windows (Run editor as admin):
+- File path: `C:\Windows\System32\drivers\etc\hosts`
+- Add line: `<INGRESS_IP> demo.k8s.local`
+
+#### Step 5: Test HTTPS endpoint
+
+```bash
+curl -k https://demo.k8s.local/
+```
+
+Notes:
+- `-k` is needed because certificate is self-signed.
+- For production, use trusted certs (for example, cert-manager + Let's Encrypt).
+
 ## Service Configuration Details
 
 ### Port Terminology
@@ -608,5 +797,9 @@ spec:
 
 ## Next Steps
 
+- Detailed Ingress guide: [Ingress](./Ingress/README.md)
+- Path-based examples: [Path-Based](./Ingress/Path-Based/README.md)
+- Header-based examples: [Header-Based](./Ingress/Header-Based/README.md)
+- TLS self-signed steps: [TLS-Self-Signed](./Ingress/TLS-Self-Signed/README.md)
 - [Health Probes](../06-Probes/README.md)
 - [Advanced Topics](../07-Advanced/README.md)
